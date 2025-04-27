@@ -105,6 +105,7 @@ def analyze_indicators(indicators: dict):
 
     return action, analysis
 
+#TODO: Need to decide on this
 def get_enhanced_signal(stock_symbol: str):
     # Fetch data
     stock_data, volume, avg_volume = fetch_stock_data(stock_symbol)

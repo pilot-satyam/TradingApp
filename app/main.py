@@ -79,7 +79,6 @@ def final_verdict(stock_symbol: str):
     # Step 2: Get Indicators
     indicators = get_stock_indicators(stock_data)
     
-    # Don't forget to add volume also to indicators
     indicators['todays_volume'] = todays_volume
     indicators['avg_volume_20'] = avg_volume_20
     
