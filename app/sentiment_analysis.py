@@ -2,6 +2,7 @@ import requests
 from textblob import TextBlob
 import yfinance as yf
 
+#TODO: Move this to a config file
 NEWS_API_KEY = "b9615c22162c4ab8a9667822d0bc2e85"
 
 def get_company_name(stock_symbol: str) -> str:
