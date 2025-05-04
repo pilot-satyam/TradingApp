@@ -11,6 +11,7 @@ from app.util import fetch_stock_data
 from app.sentiment_analysis import analyze_sentiment
 from app.strategy import get_enhanced_signal
 
+
 app = FastAPI()
 
 
@@ -75,20 +76,22 @@ def get_sentiment(stock_symbol: str):
 def final_verdict(stock_symbol: str):
     # Step 1: Fetch Historical Stock Data
     stock_data, todays_volume, avg_volume_20 = fetch_stock_data(stock_symbol)
+    if stock_data is None or stock_data.empty:
+        raise HTTPException(status_code=400, detail="Invalid or missing stock data.")
     
     # Step 2: Get Indicators
     indicators = get_stock_indicators(stock_data)
-    
     indicators['todays_volume'] = todays_volume
     indicators['avg_volume_20'] = avg_volume_20
     
     # Step 3: Analyze Technicals
-    technical_action, technical_reasons = analyze_indicators(indicators)
+    technical_action, technical_reasons, entry_point, stop_loss, target_price = analyze_indicators(indicators)
     
     # Step 4: Analyze Sentiment
     sentiment, news_titles = analyze_sentiment(stock_symbol)
 
     # Step 5: Logic for final verdict
+    final_action = None
     if technical_action == "BUY":
         if sentiment == "Positive":
             final_action = "STRONG BUY"
@@ -109,11 +112,30 @@ def final_verdict(stock_symbol: str):
         else:
             final_action = "STRONG SELL"
 
+    # Incorporate volume confirmation (optional)
+    if todays_volume > avg_volume_20 * 1.5:
+        final_action += " (High Volume Confirmation)"
+
     return {
         "stock_symbol": stock_symbol,
         "technical_action": technical_action,
         "technical_reasons": technical_reasons,
+        "entry_point": entry_point,
+        "stop_loss": stop_loss,
+        "target_price": target_price,
         "sentiment": sentiment,
         "news_titles": news_titles,
         "final_action": final_action
     }
+# @app.post("/trade_decision")
+# def trade_decision(stock_symbol: str):
+#     stock_data, _, _ = fetch_stock_data(stock_symbol)
+#     indicators = get_stock_indicators(stock_data)
+#     action, reasons, entry_point, exit_point = analyze_indicators(indicators)
+#     return {
+#         "stock_symbol": stock_symbol,
+#         "action": action,
+#         "reasons": reasons,
+#         "entry_point": entry_point,
+#         "exit_point": exit_point
+#     }
