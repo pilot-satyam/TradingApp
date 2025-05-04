@@ -32,6 +32,14 @@ def calculate_bollinger_bands(data: pd.Series, window: int = 20):
     lower_band = sma - (2 * std)
     return upper_band.iloc[-1], lower_band.iloc[-1]
 
+def calculate_atr(data: pd.DataFrame, period: int = 14):
+    high_low = data['High'] - data['Low']
+    high_close = (data['High'] - data['Close'].shift()).abs()
+    low_close = (data['Low'] - data['Close'].shift()).abs()
+    true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr = true_range.rolling(window=period).mean()
+    return atr.iloc[-1]
+
 def get_stock_indicators(stock_data: pd.DataFrame):
     indicators = {}
 
@@ -45,6 +53,12 @@ def get_stock_indicators(stock_data: pd.DataFrame):
     indicators['upper_band'] = upper_band
     indicators['lower_band'] = lower_band
     indicators['last_close'] = stock_data['Close'].iloc[-1]
+    indicators['volume'] = stock_data['Volume'].iloc[-1]
+    indicators['avg_volume'] = stock_data['Volume'].rolling(window=20).mean().iloc[-1]  # 20-day average
+    # support/resistance as recent swing low/high
+    indicators['support'] = stock_data['Low'].rolling(window=20).min().iloc[-1]
+    indicators['resistance'] = stock_data['High'].rolling(window=20).max().iloc[-1]
+    indicators['atr'] = calculate_atr(stock_data)
 
     return indicators
 
@@ -65,45 +79,73 @@ def get_trading_signal(stock_data: pd.DataFrame):
         
 def analyze_indicators(indicators: dict):
     analysis = []
-    action = "HOLD"
+    scores = {"BUY": 0, "SELL": 0, "HOLD": 0}
 
+    # RSI Analysis
     if indicators['rsi'] < 30:
-        action = "BUY"
+        scores["BUY"] += 2
         analysis.append(f"RSI ({indicators['rsi']:.2f}) indicates oversold.")
     elif indicators['rsi'] > 70:
-        action = "SELL"
+        scores["SELL"] += 2
         analysis.append(f"RSI ({indicators['rsi']:.2f}) indicates overbought.")
     else:
+        scores["HOLD"] += 1
         analysis.append(f"RSI ({indicators['rsi']:.2f}) is neutral.")
 
+    # Moving Average Analysis
     if indicators['short_ma'] > indicators['long_ma']:
-        if action != "SELL":
-            action = "BUY"
+        scores["BUY"] += 1
         analysis.append(f"Short MA ({indicators['short_ma']:.2f}) above Long MA ({indicators['long_ma']:.2f}).")
     else:
-        if action != "BUY":
-            action = "HOLD"
+        scores["HOLD"] += 1
         analysis.append(f"Short MA ({indicators['short_ma']:.2f}) below Long MA ({indicators['long_ma']:.2f}).")
 
+    # MACD Analysis
     if indicators['macd'] > indicators['macd_signal']:
-        if action != "SELL":
-            action = "BUY"
+        scores["BUY"] += 1
         analysis.append(f"MACD ({indicators['macd']:.2f}) above Signal Line ({indicators['macd_signal']:.2f}).")
     else:
-        if action != "BUY":
-            action = "SELL"
+        scores["SELL"] += 1
         analysis.append(f"MACD ({indicators['macd']:.2f}) below Signal Line ({indicators['macd_signal']:.2f}).")
 
+    # Bollinger Bands Analysis
     if indicators['last_close'] < indicators['lower_band']:
-        action = "BUY"
+        scores["BUY"] += 1
         analysis.append(f"Price ({indicators['last_close']:.2f}) near or below lower Bollinger Band ({indicators['lower_band']:.2f}).")
     elif indicators['last_close'] > indicators['upper_band']:
-        action = "SELL"
+        scores["SELL"] += 1
         analysis.append(f"Price ({indicators['last_close']:.2f}) near or above upper Bollinger Band ({indicators['upper_band']:.2f}).")
     else:
+        scores["HOLD"] += 1
         analysis.append(f"Price ({indicators['last_close']:.2f}) between Bollinger Bands.")
+    
+    # Volume Spike
+    if indicators['volume'] > 1.5 * indicators['avg_volume']:
+        scores["BUY"] += 1
+        analysis.append(f"Volume spike detected: Volume ({indicators['volume']}) is above average ({indicators['avg_volume']}).")
 
-    return action, analysis
+    # Support/Resistance Analysis
+    if indicators['last_close'] <= indicators['support'] * 1.02:  # Near support
+        scores["BUY"] += 2  # Higher weight for proximity to support
+        analysis.append(f"Price near support ({indicators['support']:.2f}).")
+    elif indicators['last_close'] >= indicators['resistance'] * 0.98:  # Near resistance
+        scores["SELL"] += 2
+        analysis.append(f"Price near resistance ({indicators['resistance']:.2f}).")
+        
+    # ATR-based Entry/Exit Suggestions
+    if scores["BUY"] > scores["SELL"]:  # Only suggest entry if "BUY" is dominant
+        entry_point = max(indicators['support'], indicators['last_close'] - indicators['atr'])
+        stop_loss = entry_point - indicators['atr']
+        target_price = entry_point + 2 * indicators['atr']
+        analysis.append(f"Suggested Entry: {entry_point:.2f}, Stop-Loss: {stop_loss:.2f}, Target: {target_price:.2f} (based on ATR {indicators['atr']:.2f})")
+    else:
+        entry_point = None
+        stop_loss = None
+        target_price = None
+
+    # Determine Final Action
+    final_action = max(scores, key=scores.get)
+    return final_action, analysis, entry_point, stop_loss, target_price
 
 #TODO: Need to decide on this
 def get_enhanced_signal(stock_symbol: str):
